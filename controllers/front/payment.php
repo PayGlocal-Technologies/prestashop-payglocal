@@ -47,7 +47,6 @@ class PayGlocalPaymentModuleFrontController extends ModuleFrontController
         
         //Create a payment url
         $payment = $this->module->createPayGlSPaymentUrl($cart);
-        
         if(isset($payment['data']['redirectUrl']) && array_key_exists('redirectUrl', $payment['data'])) {
             Tools::redirect($payment['data']['redirectUrl']);
         } else {

@@ -41,7 +41,7 @@ class PayGlocal extends PaymentModule
     {
         $this->name = 'payglocal';
         $this->tab = 'payments_gateways';
-        $this->version = '1.0.0';
+        $this->version = '1.1.0';
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
         $this->author = 'PayGlocal';
         $this->bootstrap = true;
@@ -531,9 +531,30 @@ class PayGlocal extends PaymentModule
 
     protected function createPayGlSPaymentDatas($cart)
     {
+        $customer = new Customer($cart->id_customer);
         $currency = new Currency($cart->id_currency);
         $invoice_address = new Address($cart->id_address_invoice);
-        $customer = new Customer($cart->id_customer);
+        $delivery_address = new Address($cart->id_address_delivery);
+        $invoice_country = new Country($invoice_address->id_country);
+        $delivery_country = new Country($delivery_address->id_country);
+        $invoice_phone = $invoice_address->phone;
+        $delivery_phone = $delivery_address->phone;
+        if(empty($invoice_phone)) {
+            $invoice_phone = $invoice_address->phone_mobile;
+        }
+        if(empty($delivery_phone)) {
+            $delivery_phone = $delivery_address->phone_mobile;
+        }
+        
+        $products = array();
+        foreach ($cart->getProducts() as $product) {
+            $data = [
+                'productDescription' => $product['name'],
+                'itemUnitPrice' => $product['total_wt'],
+                'itemQuantity' => $product['quantity']
+            ];
+            $products[] = $data;
+        }
         
         $payload = [
             "merchantTxnId" => $cart->id . '#' . $this->createPayGlSRandomString(16),
@@ -549,13 +570,43 @@ class PayGlocal extends PaymentModule
                     "addressCity" => $invoice_address->city,
                     "addressState" => $invoice_address->id_state ? State::getNameById($invoice_address->id_state) : "",
                     "addressPostalCode" => $invoice_address->postcode,
-                    "addressCountry" => Country::getIsoById($invoice_address->id_country),
-                    "emailId" => $customer->email
+                    "addressCountry" => $invoice_country->iso_code,
+                    "emailId" => $customer->email,
+                    "callingCode" => $invoice_country->call_prefix,
+                    "phoneNumber" => $invoice_phone,
                 )
+            ),
+            "riskData" => array(
+                "orderData" => $products,
+                "customerData" => array(
+                    //"merchantAssignedCustomerId" => $customer->id,
+                    //"customerAccountType" => "1",
+                    //"customerAccountCreationDate" => date_create($customer->date_add),
+                    "ipAddress" => Tools::getRemoteAddr(),
+                    "httpAccept" => isset($_SERVER['HTTP_ACCEPT']) ? $_SERVER['HTTP_ACCEPT'] : null,
+                    "httpUserAgent" => $_SERVER['HTTP_USER_AGENT'],
+                ),
+                "shippingData" => array(
+                    "firstName" => $customer->firstname,
+                    "lastName" => $customer->lastname,
+                    "addressStreet1" => $delivery_address->address1,
+                    "addressStreet2" => isset($delivery_address->address2) ? $delivery_address->address2 : "",
+                    "addressCity" => $delivery_address->city,
+                    "addressState" => $delivery_address->id_state ? State::getNameById($delivery_address->id_state) : "",
+                    "addressPostalCode" => $delivery_address->postcode,
+                    "addressCountry" => $delivery_country->iso_code,
+                    "emailId" => $customer->email,
+                    "callingCode" => $delivery_country->call_prefix,
+                    "phoneNumber" => $delivery_phone,
+                )
+            ),
+            "clientPlatformDetails" => array(
+                "platformName" => "Prestashop",
+                "platformVersion" => _PS_VERSION_,
             ),
             "merchantCallbackURL" => $this->context->link->getModuleLink($this->name, 'response', array(), true)
         ];
-
+        
         return json_encode($payload);
     }
 
